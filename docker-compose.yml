@@ -1,0 +1,92 @@
+version: '3.8'
+
+services:
+
+  postgres:
+    image: postgres:15
+    container_name: postgres_db
+    restart: always
+    environment:
+      POSTGRES_DB: $DB_NAME
+      POSTGRES_USER: $DB_USER
+      POSTGRES_PASSWORD: $DB_PASSWORD
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "$DB_PORT:5432"
+    networks:
+      - internal-network
+
+  redis:
+    image: redis:latest
+    container_name: redis_db
+    restart: always
+    ports:
+      - "$REDIS_PORT:6379"
+    networks:
+      - internal-network
+
+  auth-service:
+    build:
+      context: ./auth-service
+      dockerfile: Dockerfile
+    container_name: auth-service
+    ports:
+      - "8080:8080"
+    environment:
+      DB_NAME: $DB_NAME
+      DB_USER: $DB_USER
+      DB_PASSWORD: $DB_PASSWORD
+      DB_HOST: $DB_HOST
+      DB_PORT: $DB_PORT
+      SERVICE_PORT: $AUTH_SERVICE_PORT
+      REDIS_PORT: $REDIS_PORT
+      REDIS_DB_ID: $REDIS_DB_ID
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      internal-network:
+      external-network:
+        ipv4_address: 11.0.0.3
+    restart: always
+
+  message-service:
+    build:
+      context: ./message-service  
+      dockerfile: Dockerfile
+    container_name: message-service
+    ports:
+      - "8081:8081"
+    environment:
+      DB_NAME: $DB_NAME
+      DB_USER: $DB_USER
+      DB_PASSWORD: $DB_PASSWORD
+      DB_HOST: $DB_HOST
+      DB_PORT: $DB_PORT
+      SERVICE_PORT: $MESSAGE_SERVICE_PORT
+      AUTH_SERVICE_ADDR: http://11.0.0.3:$AUTH_SERVICE_PORT
+    depends_on:
+      - postgres
+      - redis
+      - auth-service
+    networks:
+      internal-network:
+      external-network:
+        ipv4_address: 11.0.0.4
+    restart: always
+
+volumes:
+  postgres_data:
+
+networks:
+  internal-network:
+    driver: bridge
+    internal: true
+  external-network:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 11.0.0.0/24
